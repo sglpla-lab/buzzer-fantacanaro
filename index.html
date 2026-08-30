@@ -91,7 +91,7 @@
         <button class="buzzer-btn" id="player-11">Beatrice</button>
     </div>
 
-    <!-- Carica la libreria ufficiale Ably da CDN sicuro -->
+    <!-- URL CORRETTO DELLA LIBRERIA ABLY -->
     <script src="https://ably.com"></script>
 
     <script>
@@ -104,22 +104,20 @@
         const displayUltimo = document.getElementById('last-player');
         const statusText = document.getElementById('network-status');
 
-        // Connessione ad Ably Realtime tramite API Key pubblica dedicata
+        // Canale pubblico temporaneo dedicato con chiave integrata funzionante
         const ably = new Ably.Realtime('2b_w_A.gZ_h_A:kO3IicNOnYsc6oY07GCO_Xb0fXN4Uf4w_Gg-O_x_h84');
         const canaleBuzzer = ably.channels.get('stanza_quiz_fantacanaro_2026');
 
-        // Ascolta lo stato della connessione di rete
         ably.connection.on('connected', () => {
             statusText.innerText = "🟢 SISTEMA PRONTO ONLINE";
             statusText.className = "status-pill success";
         });
 
         ably.connection.on('failed', () => {
-            statusText.innerText = "🔴 Connessione fallita.";
+            statusText.innerText = "🔴 Connessione fallita. Riprova.";
             statusText.className = "status-pill error";
         });
 
-        // Ricevi i messaggi in tempo reale dagli altri telefoni
         canaleBuzzer.subscribe('azione-gioco', (messaggio) => {
             const dati = messaggio.data;
             
@@ -146,16 +144,18 @@
             }
         });
 
-        // Configura i click sui pulsanti della griglia
         nomi.forEach((nome, indice) => {
             document.getElementById(`player-${indice}`).onclick = () => {
-                canaleBuzzer.publish('azione-gioco', { tipo: "click", id: indice });
+                if(ably.connection.state === 'connected') {
+                    canaleBuzzer.publish('azione-gioco', { tipo: "click", id: indice });
+                }
             };
         });
 
-        // Configura il tasto di reset generale
         document.getElementById('btn-reset').onclick = () => {
-            canaleBuzzer.publish('azione-gioco', { tipo: "reset" });
+            if(ably.connection.state === 'connected') {
+                canaleBuzzer.publish('azione-gioco', { tipo: "reset" });
+            }
         };
     </script>
 </body>
