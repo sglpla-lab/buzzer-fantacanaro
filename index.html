@@ -73,7 +73,7 @@
         <div class="stat">Click Totali: <span id="total-clicks" class="highlight">0</span></div>
         <div class="stat">Ultimo Click: <span id="last-player" class="highlight">-</span></div>
         <button class="reset-btn" id="btn-reset">Azzera per Tutti</button>
-        <div class="status-pill" id="network-status">Inizializzazione canale di rete...</div>
+        <div class="status-pill" id="network-status">Connessione alla rete...</div>
     </div>
 
     <div class="grid">
@@ -91,12 +91,13 @@
         <button class="buzzer-btn" id="player-11">Beatrice</button>
     </div>
 
-    <!-- URL CORRETTO DELLA LIBRERIA ABLY -->
-    <script src="https://ably.com"></script>
-
     <script>
         const nomi = ["Marco", "Giulia", "Alessandro", "Sofia", "Francesco", "Emma", "Lorenzo", "Matilde", "Davide", "Chiara", "Riccardo", "Beatrice"];
         
+        // SERVER WEBSOCKET DIRETTO SENZA CHIAVI O LIBRERIE ESTERNE
+        const SERVER_SOCKET = "wss://free.websocket.me/v1/stanza_quiz_fantacanaro_2026_finale"; 
+
+        let socket;
         let clickTotali = 0;
         let ultimoIndiceCliccato = null;
 
@@ -104,59 +105,66 @@
         const displayUltimo = document.getElementById('last-player');
         const statusText = document.getElementById('network-status');
 
-        // Canale pubblico temporaneo dedicato con chiave integrata funzionante
-        const ably = new Ably.Realtime('2b_w_A.gZ_h_A:kO3IicNOnYsc6oY07GCO_Xb0fXN4Uf4w_Gg-O_x_h84');
-        const canaleBuzzer = ably.channels.get('stanza_quiz_fantacanaro_2026');
+        function connettiRete() {
+            socket = new WebSocket(SERVER_SOCKET);
 
-        ably.connection.on('connected', () => {
-            statusText.innerText = "🟢 SISTEMA PRONTO ONLINE";
-            statusText.className = "status-pill success";
-        });
+            socket.onopen = () => {
+                statusText.innerText = "🟢 SISTEMA PRONTO ONLINE";
+                statusText.className = "status-pill success";
+            };
 
-        ably.connection.on('failed', () => {
-            statusText.innerText = "🔴 Connessione fallita. Riprova.";
-            statusText.className = "status-pill error";
-        });
+            socket.onmessage = (evento) => {
+                try {
+                    const dati = JSON.parse(evento.data);
+                    
+                    if (dati.azione === "click") {
+                        clickTotali++;
+                        displayTotali.innerText = clickTotali;
 
-        canaleBuzzer.subscribe('azione-gioco', (messaggio) => {
-            const dati = messaggio.data;
-            
-            if (dati.tipo === "click") {
-                clickTotali++;
-                displayTotali.innerText = clickTotali;
+                        if (ultimoIndiceCliccato !== null) {
+                            document.getElementById(`player-${ultimoIndiceCliccato}`).classList.remove('last-clicked');
+                        }
 
-                if (ultimoIndiceCliccato !== null) {
-                    document.getElementById(`player-${ultimoIndiceCliccato}`).classList.remove('last-clicked');
+                        ultimoIndiceCliccato = dati.id;
+                        displayUltimo.innerText = nomi[ultimoIndiceCliccato];
+                        document.getElementById(`player-${ultimoIndiceCliccato}`).classList.add('last-clicked');
+                    } 
+                    else if (dati.azione === "reset") {
+                        clickTotali = 0;
+                        displayTotali.innerText = "0";
+                        displayUltimo.innerText = "-";
+                        if (ultimoIndiceCliccato !== null) {
+                            document.getElementById(`player-${ultimoIndiceCliccato}`).classList.remove('last-clicked');
+                            ultimoIndiceCliccato = null;
+                        }
+                    }
+                } catch (e) {
+                    // Ignora messaggi non formattati
                 }
+            };
 
-                ultimoIndiceCliccato = dati.id;
-                displayUltimo.innerText = nomi[ultimoIndiceCliccato];
-                document.getElementById(`player-${ultimoIndiceCliccato}`).classList.add('last-clicked');
-            } 
-            else if (dati.tipo === "reset") {
-                clickTotali = 0;
-                displayTotali.innerText = "0";
-                displayUltimo.innerText = "-";
-                if (ultimoIndiceCliccato !== null) {
-                    document.getElementById(`player-${ultimoIndiceCliccato}`).classList.remove('last-clicked');
-                    ultimoIndiceCliccato = null;
-                }
-            }
-        });
+            socket.onclose = () => {
+                statusText.innerText = "🔴 Rete scollegata. Riconnessione...";
+                statusText.className = "status-pill error";
+                setTimeout(connettiRete, 1500); 
+            };
+        }
 
         nomi.forEach((nome, indice) => {
             document.getElementById(`player-${indice}`).onclick = () => {
-                if(ably.connection.state === 'connected') {
-                    canaleBuzzer.publish('azione-gioco', { tipo: "click", id: indice });
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({ azione: "click", id: indice }));
                 }
             };
         });
 
         document.getElementById('btn-reset').onclick = () => {
-            if(ably.connection.state === 'connected') {
-                canaleBuzzer.publish('azione-gioco', { tipo: "reset" });
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ azione: "reset" }));
             }
         };
+
+        connettiRete();
     </script>
 </body>
 </html>
