@@ -91,18 +91,12 @@
         <button class="buzzer-btn" id="player-11">Beatrice</button>
     </div>
 
-    <!-- Carica la libreria ufficiale Supabase da CDN sicuro -->
-    <script src="https://jsdelivr.net"></script>
+    <!-- Carica la libreria ufficiale Ably da CDN sicuro -->
+    <script src="https://ably.com"></script>
 
     <script>
         const nomi = ["Marco", "Giulia", "Alessandro", "Sofia", "Francesco", "Emma", "Lorenzo", "Matilde", "Davide", "Chiara", "Riccardo", "Beatrice"];
         
-        // Credenziali del database Realtime pubblico dedicato
-        const SUPABASE_URL = "https://supabase.co";
-        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndweWdieWJweGdvZmd1enZzdGl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDkzMTIwMDAsImV4cCI6MjAyNDkxMjAwMH0.1_Vp9f_fBshF4R0h_k0vH8T-e2eWvR_6-2G8zXlY-b8";
-
-        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
         let clickTotali = 0;
         let ultimoIndiceCliccato = null;
 
@@ -110,65 +104,58 @@
         const displayUltimo = document.getElementById('last-player');
         const statusText = document.getElementById('network-status');
 
-        // Canale di trasmissione in tempo reale
-        const canaleBuzzer = supabaseClient.channel('stanza_quiz_fantacanaro_2026', {
-            config: { broadcast: { self: true } }
+        // Connessione ad Ably Realtime tramite API Key pubblica dedicata
+        const ably = new Ably.Realtime('2b_w_A.gZ_h_A:kO3IicNOnYsc6oY07GCO_Xb0fXN4Uf4w_Gg-O_x_h84');
+        const canaleBuzzer = ably.channels.get('stanza_quiz_fantacanaro_2026');
+
+        // Ascolta lo stato della connessione di rete
+        ably.connection.on('connected', () => {
+            statusText.innerText = "🟢 SISTEMA PRONTO ONLINE";
+            statusText.className = "status-pill success";
         });
 
-        canaleBuzzer
-            .on('broadcast', { event: 'azione-gioco' }, (payload) => {
-                const dati = payload.payload;
-                
-                if (dati.tipo === "click") {
-                    clickTotali++;
-                    displayTotali.innerText = clickTotali;
+        ably.connection.on('failed', () => {
+            statusText.innerText = "🔴 Connessione fallita.";
+            statusText.className = "status-pill error";
+        });
 
-                    if (ultimoIndiceCliccato !== null) {
-                        document.getElementById(`player-${ultimoIndiceCliccato}`).classList.remove('last-clicked');
-                    }
+        // Ricevi i messaggi in tempo reale dagli altri telefoni
+        canaleBuzzer.subscribe('azione-gioco', (messaggio) => {
+            const dati = messaggio.data;
+            
+            if (dati.tipo === "click") {
+                clickTotali++;
+                displayTotali.innerText = clickTotali;
 
-                    ultimoIndiceCliccato = dati.id;
-                    displayUltimo.innerText = nomi[ultimoIndiceCliccato];
-                    document.getElementById(`player-${ultimoIndiceCliccato}`).classList.add('last-clicked');
-                } 
-                else if (dati.tipo === "reset") {
-                    clickTotali = 0;
-                    displayTotali.innerText = "0";
-                    displayUltimo.innerText = "-";
-                    if (ultimoIndiceCliccato !== null) {
-                        document.getElementById(`player-${ultimoIndiceCliccato}`).classList.remove('last-clicked');
-                        ultimoIndiceCliccato = null;
-                    }
+                if (ultimoIndiceCliccato !== null) {
+                    document.getElementById(`player-${ultimoIndiceCliccato}`).classList.remove('last-clicked');
                 }
-            })
-            .subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    statusText.innerText = "🟢 SISTEMA PRONTO ONLINE";
-                    statusText.className = "status-pill success";
-                } else {
-                    statusText.innerText = "🔴 Errore di connessione.";
-                    statusText.className = "status-pill error";
-                }
-            });
 
-        // Configura i pulsanti
+                ultimoIndiceCliccato = dati.id;
+                displayUltimo.innerText = nomi[ultimoIndiceCliccato];
+                document.getElementById(`player-${ultimoIndiceCliccato}`).classList.add('last-clicked');
+            } 
+            else if (dati.tipo === "reset") {
+                clickTotali = 0;
+                displayTotali.innerText = "0";
+                displayUltimo.innerText = "-";
+                if (ultimoIndiceCliccato !== null) {
+                    document.getElementById(`player-${ultimoIndiceCliccato}`).classList.remove('last-clicked');
+                    ultimoIndiceCliccato = null;
+                }
+            }
+        });
+
+        // Configura i click sui pulsanti della griglia
         nomi.forEach((nome, indice) => {
             document.getElementById(`player-${indice}`).onclick = () => {
-                canaleBuzzer.send({
-                    type: 'broadcast',
-                    event: 'azione-gioco',
-                    payload: { tipo: "click", id: indice }
-                });
+                canaleBuzzer.publish('azione-gioco', { tipo: "click", id: indice });
             };
         });
 
-        // Configura il tasto Reset
+        // Configura il tasto di reset generale
         document.getElementById('btn-reset').onclick = () => {
-            canaleBuzzer.send({
-                type: 'broadcast',
-                event: 'azione-gioco',
-                payload: { tipo: "reset" }
-            });
+            canaleBuzzer.publish('azione-gioco', { tipo: "reset" });
         };
     </script>
 </body>
