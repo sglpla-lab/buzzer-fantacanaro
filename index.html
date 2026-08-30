@@ -73,7 +73,7 @@
         <div class="stat">Click Totali: <span id="total-clicks" class="highlight">0</span></div>
         <div class="stat">Ultimo Click: <span id="last-player" class="highlight">-</span></div>
         <button class="reset-btn" id="btn-reset">Azzera per Tutti</button>
-        <div class="status-pill" id="network-status">Connessione alla rete...</div>
+        <div class="status-pill" id="network-status">Inizializzazione canale di rete...</div>
     </div>
 
     <div class="grid">
@@ -91,13 +91,18 @@
         <button class="buzzer-btn" id="player-11">Beatrice</button>
     </div>
 
+    <!-- Carica la libreria ufficiale Supabase da CDN sicuro -->
+    <script src="https://jsdelivr.net"></script>
+
     <script>
         const nomi = ["Marco", "Giulia", "Alessandro", "Sofia", "Francesco", "Emma", "Lorenzo", "Matilde", "Davide", "Chiara", "Riccardo", "Beatrice"];
         
-        // Nuovo server di rete WebSocket pubblico e stabile
-        const SERVER_SOCKET = "wss://free.websocket.me/v1/stanza_quiz_fantacanaro_123456"; 
+        // Credenziali del database Realtime pubblico dedicato
+        const SUPABASE_URL = "https://supabase.co";
+        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndweWdieWJweGdvZmd1enZzdGl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDkzMTIwMDAsImV4cCI6MjAyNDkxMjAwMH0.1_Vp9f_fBshF4R0h_k0vH8T-e2eWvR_6-2G8zXlY-b8";
 
-        let socket;
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
         let clickTotali = 0;
         let ultimoIndiceCliccato = null;
 
@@ -105,71 +110,66 @@
         const displayUltimo = document.getElementById('last-player');
         const statusText = document.getElementById('network-status');
 
-        function connettiRete() {
-            socket = new WebSocket(SERVER_SOCKET);
+        // Canale di trasmissione in tempo reale
+        const canaleBuzzer = supabaseClient.channel('stanza_quiz_fantacanaro_2026', {
+            config: { broadcast: { self: true } }
+        });
 
-            socket.onopen = () => {
-                statusText.innerText = "🟢 SISTEMA PRONTO ONLINE";
-                statusText.className = "status-pill success";
-            };
+        canaleBuzzer
+            .on('broadcast', { event: 'azione-gioco' }, (payload) => {
+                const dati = payload.payload;
+                
+                if (dati.tipo === "click") {
+                    clickTotali++;
+                    displayTotali.innerText = clickTotali;
 
-            socket.onmessage = (evento) => {
-                try {
-                    const dati = JSON.parse(evento.data);
-                    
-                    if (dati.azione === "click") {
-                        clickTotali++;
-                        displayTotali.innerText = clickTotali;
-
-                        // Rimuovi colore verde dal vecchio tasto
-                        if (ultimoIndiceCliccato !== null) {
-                            document.getElementById(`player-${ultimoIndiceCliccato}`).classList.remove('last-clicked');
-                        }
-
-                        // Imposta il nuovo tasto verde
-                        ultimoIndiceCliccato = dati.id;
-                        displayUltimo.innerText = nomi[ultimoIndiceCliccato];
-                        document.getElementById(`player-${ultimoIndiceCliccato}`).classList.add('last-clicked');
-                    } 
-                    else if (dati.azione === "reset") {
-                        clickTotali = 0;
-                        displayTotali.innerText = "0";
-                        displayUltimo.innerText = "-";
-                        if (ultimoIndiceCliccato !== null) {
-                            document.getElementById(`player-${ultimoIndiceCliccato}`).classList.remove('last-clicked');
-                            ultimoIndiceCliccato = null;
-                        }
+                    if (ultimoIndiceCliccato !== null) {
+                        document.getElementById(`player-${ultimoIndiceCliccato}`).classList.remove('last-clicked');
                     }
-                } catch (e) {
-                    // Ignora messaggi di testo non formattati
+
+                    ultimoIndiceCliccato = dati.id;
+                    displayUltimo.innerText = nomi[ultimoIndiceCliccato];
+                    document.getElementById(`player-${ultimoIndiceCliccato}`).classList.add('last-clicked');
+                } 
+                else if (dati.tipo === "reset") {
+                    clickTotali = 0;
+                    displayTotali.innerText = "0";
+                    displayUltimo.innerText = "-";
+                    if (ultimoIndiceCliccato !== null) {
+                        document.getElementById(`player-${ultimoIndiceCliccato}`).classList.remove('last-clicked');
+                        ultimoIndiceCliccato = null;
+                    }
                 }
-            };
+            })
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    statusText.innerText = "🟢 SISTEMA PRONTO ONLINE";
+                    statusText.className = "status-pill success";
+                } else {
+                    statusText.innerText = "🔴 Errore di connessione.";
+                    statusText.className = "status-pill error";
+                }
+            });
 
-            socket.onclose = () => {
-                statusText.innerText = "🔴 Rete scollegata. Riconnessione...";
-                statusText.className = "status-pill error";
-                setTimeout(connettiRete, 1500); 
-            };
-        }
-
-        // Configura le azioni al click sui pulsanti della griglia
+        // Configura i pulsanti
         nomi.forEach((nome, indice) => {
             document.getElementById(`player-${indice}`).onclick = () => {
-                if (socket.readyState === WebSocket.OPEN) {
-                    socket.send(JSON.stringify({ azione: "click", id: indice }));
-                }
+                canaleBuzzer.send({
+                    type: 'broadcast',
+                    event: 'azione-gioco',
+                    payload: { tipo: "click", id: indice }
+                });
             };
         });
 
-        // Configura il pulsante di reset generale
+        // Configura il tasto Reset
         document.getElementById('btn-reset').onclick = () => {
-            if (socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({ azione: "reset" }));
-            }
+            canaleBuzzer.send({
+                type: 'broadcast',
+                event: 'azione-gioco',
+                payload: { tipo: "reset" }
+            });
         };
-
-        // Avvia la connessione di rete all'apertura del sito
-        connettiRete();
     </script>
 </body>
 </html>
